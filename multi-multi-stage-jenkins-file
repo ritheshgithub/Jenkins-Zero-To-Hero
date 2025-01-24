@@ -1,0 +1,156 @@
+pipeline {
+    agent none
+    environment {
+        BACKEND_IMAGE = 'maven:3.8.1-adoptopenjdk-11'
+        FRONTEND_IMAGE = 'node:16-alpine'
+        BUILD_DIR = '/workspace'
+        BACKEND_DIR = '/backend'
+        FRONTEND_DIR = '/frontend'
+    }
+    stages {
+        stage('Checkout') {
+            agent any
+            steps {
+                // Checkout code from the repository
+                checkout scm
+            }
+        }
+        stage('Back-end Build') {
+            agent {
+                docker { image "${env.BACKEND_IMAGE}" }
+            }
+            steps {
+                script {
+                    // Navigate to backend directory and build using Maven
+                    dir("${env.BACKEND_DIR}") {
+                        sh 'mvn clean install'
+                    }
+                }
+            }
+        }
+        stage('Front-end Build') {
+            agent {
+                docker { image "${env.FRONTEND_IMAGE}" }
+            }
+            steps {
+                script {
+                    // Navigate to frontend directory and install dependencies
+                    dir("${env.FRONTEND_DIR}") {
+                        sh 'npm install'
+                        sh 'npm run build'
+                    }
+                }
+            }
+        }
+        stage('Back-end Unit Tests') {
+            agent {
+                docker { image "${env.BACKEND_IMAGE}" }
+            }
+            steps {
+                script {
+                    // Run unit tests for the back-end
+                    dir("${env.BACKEND_DIR}") {
+                        sh 'mvn test'
+                    }
+                }
+            }
+        }
+        stage('Front-end Unit Tests') {
+            agent {
+                docker { image "${env.FRONTEND_IMAGE}" }
+            }
+            steps {
+                script {
+                    // Run unit tests for the front-end
+                    dir("${env.FRONTEND_DIR}") {
+                        sh 'npm test'
+                    }
+                }
+            }
+        }
+        stage('Build Artifacts') {
+            parallel {
+                stage('Back-end Artifact') {
+                    agent {
+                        docker { image "${env.BACKEND_IMAGE}" }
+                    }
+                    steps {
+                        script {
+                            // Build and save back-end artifact (e.g., JAR)
+                            dir("${env.BACKEND_DIR}") {
+                                sh 'mvn package'
+                                archiveArtifacts artifacts: 'target/*.jar', allowEmptyArchive: true
+                            }
+                        }
+                    }
+                }
+                stage('Front-end Artifact') {
+                    agent {
+                        docker { image "${env.FRONTEND_IMAGE}" }
+                    }
+                    steps {
+                        script {
+                            // Create a zipped front-end build artifact (e.g., static files)
+                            dir("${env.FRONTEND_DIR}") {
+                                sh 'npm run build'
+                                archiveArtifacts artifacts: 'build/**/*', allowEmptyArchive: true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        stage('Deploy to Staging') {
+            parallel {
+                stage('Deploy Back-end') {
+                    agent any
+                    steps {
+                        script {
+                            // Deploy back-end to a staging environment
+                            sh 'echo Deploying Back-end to Staging...'
+                            // Add real deployment commands here
+                        }
+                    }
+                }
+                stage('Deploy Front-end') {
+                    agent any
+                    steps {
+                        script {
+                            // Deploy front-end to a staging environment
+                            sh 'echo Deploying Front-end to Staging...'
+                            // Add real deployment commands here
+                        }
+                    }
+                }
+            }
+        }
+        stage('Integration Tests') {
+            agent any
+            steps {
+                script {
+                    // Run integration tests after deployment
+                    sh 'echo Running integration tests...'
+                    // Add integration test commands here
+                }
+            }
+        }
+        stage('Clean Up') {
+            agent any
+            steps {
+                // Clean up resources, remove any unused images or containers
+                sh 'docker system prune -f'
+            }
+        }
+    }
+    post {
+        success {
+            echo 'Pipeline successfully completed!'
+        }
+        failure {
+            echo 'Pipeline failed! Investigate the error above.'
+        }
+        always {
+            echo 'Cleaning up after build...'
+        }
+    }
+}
